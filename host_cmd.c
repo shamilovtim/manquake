@@ -92,8 +92,9 @@ void Host_Status_f (void)
 			qsmack = 1;
 	}
 
-	print ("host:    %s\n", Cvar_VariableString ("hostname"));
-	print ("version: ManQuake %4.2f %s\n", PROQUAKE_VERSION, pq_cheatfree ? "cheat-free" : ""); // JPG - added ProQuake
+	extern cvar_t pq_wallhackprotect;
+	print ("host:    %s (anti-wallhack: %s)\n", Cvar_VariableString ("hostname"), pq_wallhackprotect.value ? (pq_wallhackprotect.value>=2.0f ? "maximum, glow enabled" : "players") : "off");
+	print ("version: ProQuake %4.2f %s\n", PROQUAKE_VERSION, pq_cheatfree ? "cheat-free" : ""); // JPG - added ProQuake
 	if (tcpipAvailable)
 		print ("tcp/ip:  %s\n", my_tcpip_address);
 	print ("map:     %s\n", sv.name);
@@ -428,7 +429,7 @@ void Host_Name_f (void)
 
 void Host_Version_f (void)
 {
-	Con_Printf ("ManQuake Version %4.2f Build %4.2f\n", PROQUAKE_VERSION, PROQUAKE_BUILD); // JPG - added ProQuake
+	Con_Printf ("ProQuake Version %4.2f Build %4.2f\n", PROQUAKE_VERSION, PROQUAKE_BUILD); // JPG - added ProQuake
 	Con_Printf ("Exe: "__TIME__" "__DATE__"\n");
 }
 

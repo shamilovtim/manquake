@@ -309,7 +309,7 @@ void MSG_WriteString (sizebuf_t *sb, char *s)
 		MSG_WriteChar (sb, 0);
 	else
 	{
-		SZ_Write_hack (s);
+		//SZ_Write_hack (s);
 		SZ_Write (sb, s, strlen(s)+1);
 	}
 }
