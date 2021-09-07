@@ -27,10 +27,7 @@ server_t		sv;
 server_static_t	svs;
 
 // Slot Zero 3.50-2  Prevent players from using wall hack.
-cvar_t	pq_wallhackprotect = {"pq_wallhackprotect", "1"};
-
-// Slot Zero 2.77  Disable weapon kick while attacking.
-cvar_t	sv_nopunchangle = {"sv_nopunchangle", "1"};
+cvar_t    pq_wallhackprotect = {"pq_wallhackprotect", "1"};
 
 char	localmodels[MAX_MODELS][5];			// inline model names for precache
 
@@ -68,8 +65,6 @@ void SV_Init (void)
 	Cvar_RegisterVariable (&sv_nostep);
 	Cvar_RegisterVariable (&sv_noclip);
 	Cvar_RegisterVariable (&pq_fullpitch);	// JPG 2.01
-	Cvar_RegisterVariable (&sv_nopunchangle);	// Slot Zero 2.77  Disable weapon kick while attacking.
-
 
     // Slot Zero 3.50-2  Prevent players from using wall hack.
     Cvar_RegisterVariable (&pq_wallhackprotect);
@@ -216,7 +211,7 @@ void SV_SendServerinfo (client_t *client)
 					  "\n   \01\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\02\03");
 	MSG_WriteString (&client->message,message);
 	MSG_WriteByte (&client->message, svc_print);
-	dpsnprintf (message, sizeof(message), "\02\n   \04ManQuake Server Version %4.2f\06"
+	dpsnprintf (message, sizeof(message), "\02\n   \04ProQuake Server Version %4.2f\06"
 					  "\n   \07\10\10\10\10\10\10\10\10\10\10\10\10\10\10\10\10\10\10\10\10\10\10\10\10\10\10\10\10\11", PROQUAKE_VERSION);
 	MSG_WriteString (&client->message,message);
 
@@ -695,51 +690,84 @@ qboolean Q1BSP_Trace(model_t *model, int forcehullnum, int frame, vec3_t start, 
 }
 
 
+// R00k: Better anti-wallhack, less cpu usage too! (start)
+
+#define offsetrandom(MIN,MAX) ((rand() & 32767) * (((MAX)-(MIN)) * (1.0f / 32767.0f)) + (MIN))//LordHavoc
+
 qboolean SV_InvisibleToClient(edict_t *viewer, edict_t *seen)
 {
 	int i;
-	trace_t tr;
-	vec3_t start;
-	vec3_t end;
-	edict_t *ent;
-	eval_t  *val;
+	trace_t	tr;
+	vec3_t	start;
+	vec3_t	end;
+	extern trace_t SV_ClipMoveToEntity (edict_t *ent, vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end);
+	int it;
+//	int vi;
 
-//	if (seen->v->solid == SOLID_BSP)
-//		return false;	//bsp ents are never culled this way
+//	vi = (int)viewer->v.colormap - 1;
 
-	//stage 1: check against their origin
-#ifdef RUNEQUAKE
-	val = GetEdictFieldValue(viewer, "viewentity");
-	if (val && val->edict)
+//	if (seen->visibletime[vi] > sv.time)//dont check this ent for this client every frame! Once per second is enough.
+//		return false;
+
+	it = (int)(seen->v.items);
+
+	//R00k: DM players want to see the Quad/Pent glow. Dont cull them at the moment...(cvar?)
+   	if ((strcmp(pr_strings + seen->v.classname, "player") == 0) && ((it & IT_QUAD) || (it & IT_INVULNERABILITY)))
 	{
-		ent = PROG_TO_EDICT(val->edict);
-		VectorAdd(ent->v.origin, ent->v.view_ofs, start);
-	}
-	else
-#endif
-		VectorAdd(viewer->v.origin, viewer->v.view_ofs, start);
-	tr.fraction = 1;
-
-	if (!Q1BSP_Trace (sv.worldmodel, 1, 0, start, seen->v.origin, vec3_origin, vec3_origin, &tr))
-		return false;	//wasn't blocked
-
-
-	//stage 2: check against their bbox
-	for (i = 0; i < 8; i++)
-	{
-		end[0] = seen->v.origin[0] + ((i&1)?seen->v.mins[0]:seen->v.maxs[0]);
-		end[1] = seen->v.origin[1] + ((i&2)?seen->v.mins[1]:seen->v.maxs[1]);
-		end[2] = seen->v.origin[2] + ((i&4)?seen->v.mins[2]+0.1:seen->v.maxs[2]);
-
-		tr.fraction = 1;
-		if (!Q1BSP_Trace (sv.worldmodel, 1, 0, start, end, vec3_origin, vec3_origin, &tr))
-			return false;	//this trace went through, so don't cull
+		return false;
 	}
 
-	return true;
+	if (pq_wallhackprotect.value == 1)    //1 only check player models, 2 = check all ents
+	{
+		if (strcmp(pr_strings + seen->v.classname, "player"))
+			return false;
+	}
+
+    memset (&tr, 0, sizeof(tr));
+    tr.fraction = 1;
+
+    start[0] = viewer->v.origin[0];
+    start[1] = viewer->v.origin[1];
+    start[2] = viewer->v.origin[2] + viewer->v.view_ofs[2];
+
+    //aim straight at the center of "seen" from our eyes
+    end[0] = 0.5 * (seen->v.mins[0] + seen->v.maxs[0]);
+    end[1] = 0.5 * (seen->v.mins[1] + seen->v.maxs[1]);
+    end[2] = 0.5 * (seen->v.mins[2] + seen->v.maxs[2]);
+
+    tr = SV_ClipMoveToEntity (sv.edicts, start, vec3_origin, vec3_origin, end);
+
+	if (tr.fraction == 1)// line hit the ent
+	{
+//		seen->visibletime[vi] = sv.time + 1;//cvar this value?
+        return false;
+	}
+
+    memset (&tr, 0, sizeof(tr));
+    tr.fraction = 1;
+
+	//last attempt to eliminate any flaws...
+    if ((!strcmp(pr_strings + seen->v.classname, "player")) || (pq_wallhackprotect.value > 1))
+    {
+        for (i = 0; i < 64; i++)//change 64 to something lower FIXME cvar?
+        {
+            end[0] = seen->v.origin[0] + offsetrandom(seen->v.mins[0], seen->v.maxs[0]);
+            end[1] = seen->v.origin[1] + offsetrandom(seen->v.mins[1], seen->v.maxs[1]);
+            end[2] = seen->v.origin[2] + offsetrandom(seen->v.mins[2], seen->v.maxs[2]);
+
+            tr = SV_ClipMoveToEntity (sv.edicts, start, vec3_origin, vec3_origin, end);
+
+			if (tr.fraction == 1)// line hit the ent
+			{
+//				seen->visibletime[vi] = sv.time + 1;//cvar this value?
+				return false;
+			}
+        }
+    }
+    return true;
 }
+// R00k: Better anti-wallhack, less cpu usage too! (end)
 
-// Slot Zero 3.50-2  Prevent players from using wall hack. (end)
 
 /*
 =============
@@ -802,11 +830,11 @@ void SV_WriteEntitiesToClient (edict_t	*clent, sizebuf_t *msg, qboolean nomap)
 				continue;
 
 			// Slot Zero 3.50-2  Prevent players from using wall hack.
-			if (e <= svs.maxclients && pq_wallhackprotect.value && !(pq_wallhackprotect.value == 2 && (int)ent->v.items & (IT_QUAD | IT_INVULNERABILITY)))
-			{
-				if(SV_InvisibleToClient(clent, ent))
-					continue;
-			}
+			if (pq_wallhackprotect.value)
+		            {
+		                if(SV_InvisibleToClient(clent, ent))
+				continue;
+		            }
 		}
 
 		if (msg->maxsize - msg->cursize < 16)
@@ -1018,10 +1046,8 @@ void SV_WriteClientdataToMessage (edict_t *ent, sizebuf_t *msg)
 
 	for (i=0 ; i<3 ; i++)
 	{
-		// Slot Zero 2.77  Disable weapon kick while attacking.
-		if (ent->v.punchangle[i] && !sv_nopunchangle.value)
-				bits |= (SU_PUNCH1<<i);
-
+		if (ent->v.punchangle[i])
+			bits |= (SU_PUNCH1<<i);
 		if (ent->v.velocity[i])
 			bits |= (SU_VELOCITY1<<i);
 	}
@@ -1050,7 +1076,6 @@ void SV_WriteClientdataToMessage (edict_t *ent, sizebuf_t *msg)
 	{
 		if (bits & (SU_PUNCH1<<i))
 			MSG_WriteChar (msg, ent->v.punchangle[i]);
-
 		if (bits & (SU_VELOCITY1<<i))
 			MSG_WriteChar (msg, ent->v.velocity[i]/16);
 	}

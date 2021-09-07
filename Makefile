@@ -13,7 +13,7 @@ BIN_DIR		:= bin
 
 # compiler flags
 CC		:= gcc
-CFLAGS		:= -m32 -Dstricmp=strcasecmp -g -O6 -ffast-math -funroll-loops -fexpensive-optimizations
+CFLAGS		:= -static -m32 -Dstricmp=strcasecmp -g -O6 -ffast-math -funroll-loops -fexpensive-optimizations
 DEBUG_CFLAGS	:= -m32 -Dstricmp=strcasecmp -g
 LDFLAGS		:= -lm -ldl
 ASFLAGS		:= -DELF -x assembler-with-cpp
